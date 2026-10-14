@@ -15,23 +15,45 @@ A practical video tracking pipeline and HTTP API that combine an Ultralytics YOL
 ## Architecture
 
 ```mermaid
-flowchart LR
-    A["Video upload or webcam"] --> S["FastAPI<br/>/track or /stream"]
-    S --> B["OpenCV<br/>capture frames"]
-    B --> C["YOLO detector<br/>PyTorch inference"]
-    W["YOLO weights<br/>and confidence threshold"] --> C
-    C -->|boxes, confidence, class| D["Detection conversion<br/>xyxy to xywh"]
-    D --> E["DeepSORT tracker<br/>associate detections"]
-    B -->|current frame| E
-    E -->|confirmed tracks and IDs| F["Draw labeled boxes"]
-    B -->|current frame| F
-    F --> G{"Output"}
-    G -->|CLI preview| H["OpenCV display"]
-    G -->|webcam response| J["MJPEG stream"]
-    G -->|recording or upload response| I["Annotated MP4"]
+flowchart TB
+    subgraph Inputs["Inputs and entry points"]
+        V["Local video file"] --> CLI["CLI pipeline"]
+        C["Camera attached to server"] --> CLI
+        U["Browser video upload"] --> API["FastAPI /track"]
+        API --> TMP["Temporary uploaded video"]
+        TMP --> READER["OpenCV video reader"]
+        BREQ["Browser webcam request"] --> STREAM["FastAPI /stream"]
+        WC["Camera attached to server"] --> CAM["OpenCV webcam capture"]
+        STREAM --> CAM
+        CLI --> READER
+    end
+
+    subgraph Tracking["Shared per-frame tracking pipeline"]
+        READER --> FRAME["Video frame"]
+        CAM --> FRAME
+        FRAME --> YOLO["YOLO detector<br/>PyTorch inference"]
+        WEIGHTS["YOLO weights and<br/>confidence threshold"] --> YOLO
+        YOLO --> DET["Convert boxes<br/>xyxy to xywh"]
+        DET --> SORT["DeepSORT<br/>detection association"]
+        FRAME --> SORT
+        SORT --> TRACKS["Confirmed tracks<br/>class labels and IDs"]
+        TRACKS --> DRAW["Draw tracked boxes<br/>on the frame"]
+        FRAME --> DRAW
+    end
+
+    subgraph Outputs["Outputs"]
+        DRAW --> PREVIEW["CLI preview"]
+        DRAW --> SAVE["CLI annotated video"]
+        DRAW --> ENCODE["JPEG frame encoder"]
+        ENCODE --> MJPEG["MJPEG response"]
+        MJPEG --> BROWSER["Browser live preview"]
+        DRAW --> MP4["Annotated MP4"]
+        MP4 --> DOWNLOAD["FastAPI video response"]
+        DOWNLOAD --> BROWSER
+    end
 ```
 
-Each frame is read by OpenCV, passed to YOLO for detections, and paired with those detections by DeepSORT to maintain track identities across frames. Confirmed tracks are drawn on the frame, which can be previewed, streamed as MJPEG, or written to a video file. The HTTP API loads YOLO weights on the first tracking request; `GET /health` reports server status without loading the model.
+The CLI and HTTP API have separate input paths but share the same frame-processing and tracking logic. For uploads, FastAPI saves the file temporarily and OpenCV reads it frame by frame; webcam streaming captures from a camera connected to the server. YOLO detections are converted for DeepSORT, which associates them with the current frame to maintain track identities. The annotated frames are then previewed, saved as video, returned as an MP4 upload response, or encoded as an MJPEG webcam stream. The HTTP API loads YOLO weights on the first tracking request; `GET /health` reports server status without loading the model.
 
 ## Requirements
 
