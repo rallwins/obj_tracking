@@ -79,6 +79,7 @@ http://127.0.0.1:8000/stream?source=0
 ```
 
 Interactive API documentation is available at `http://127.0.0.1:8000/docs`.
+The tracking studio is available at `http://127.0.0.1:8000/`.
 
 ### Command-line pipeline
 

@@ -11,11 +11,13 @@ from typing import Any
 
 from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from starlette.background import BackgroundTask
 
 from obj_tracking.pipeline import process_frame, run_pipeline
 
 SUPPORTED_VIDEO_SUFFIXES = {".avi", ".m4v", ".mkv", ".mov", ".mp4", ".webm"}
+MAX_VIDEO_SIZE = 500 * 1024 * 1024
 
 
 def create_app(model_path: str = "yolo11n.pt") -> FastAPI:
@@ -28,6 +30,7 @@ def create_app(model_path: str = "yolo11n.pt") -> FastAPI:
     app.state.model = None
     app.state.model_lock = Lock()
     app.state.inference_lock = Lock()
+    frontend_dir = Path(__file__).parent / "static"
 
     def get_runtime() -> tuple[Any, Any, Any]:
         try:
@@ -63,13 +66,19 @@ def create_app(model_path: str = "yolo11n.pt") -> FastAPI:
                 detail=f"Unsupported video extension. Use one of: {', '.join(sorted(SUPPORTED_VIDEO_SUFFIXES))}",
             )
 
-        _, model, tracker_type = get_runtime()
         temporary_directory = tempfile.mkdtemp(prefix="obj-tracking-")
         input_path = Path(temporary_directory) / f"input{suffix}"
         output_path = Path(temporary_directory) / "tracked.mp4"
         try:
             with input_path.open("wb") as destination:
-                shutil.copyfileobj(video.file, destination)
+                size = 0
+                while chunk := video.file.read(1024 * 1024):
+                    size += len(chunk)
+                    if size > MAX_VIDEO_SIZE:
+                        raise HTTPException(status_code=413, detail="Video uploads must be 500 MB or smaller")
+                    destination.write(chunk)
+
+            _, model, tracker_type = get_runtime()
             frame_count = run_pipeline(
                 source=str(input_path),
                 model_path=request.app.state.model_path,
@@ -133,6 +142,11 @@ def create_app(model_path: str = "yolo11n.pt") -> FastAPI:
             media_type="multipart/x-mixed-replace; boundary=frame",
         )
 
+    @app.get("/", include_in_schema=False)
+    def frontend() -> FileResponse:
+        return FileResponse(frontend_dir / "index.html")
+
+    app.mount("/assets", StaticFiles(directory=frontend_dir), name="assets")
     return app
 
 
