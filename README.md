@@ -78,6 +78,8 @@ View webcam 0 as an MJPEG stream in a browser:
 http://127.0.0.1:8000/stream?source=0
 ```
 
+The webcam must be connected to the machine running the server. On macOS, grant camera access to the app that launched the server (for example, Terminal or VS Code) in **System Settings → Privacy & Security → Camera**, then restart the server.
+
 Interactive API documentation is available at `http://127.0.0.1:8000/docs`.
 The tracking studio is available at `http://127.0.0.1:8000/`.
 

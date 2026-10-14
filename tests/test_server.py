@@ -15,7 +15,9 @@ class ServerFrontendTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("Tracking studio", response.text)
         self.assertEqual(self.client.get("/assets/styles.css").status_code, 200)
-        self.assertEqual(self.client.get("/assets/app.js").status_code, 200)
+        script = self.client.get("/assets/app.js")
+        self.assertEqual(script.status_code, 200)
+        self.assertIn("System Settings", script.text)
 
     def test_health_endpoint_does_not_load_model(self):
         response = self.client.get("/health")

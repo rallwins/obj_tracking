@@ -166,7 +166,7 @@ function startCamera() {
   };
   stream.onerror = () => {
     stopCamera();
-    cameraError.textContent = "Could not connect to the camera. Check the server logs and make sure a camera is available on the server machine.";
+    cameraError.textContent = "Could not open the server camera. On macOS, allow camera access for the app running this server in System Settings → Privacy & Security → Camera, then restart the server and try again.";
     cameraError.classList.remove("hidden");
   };
   stream.src = `/stream?source=${encodeURIComponent(source)}&confidence=${encodeURIComponent(confidence)}&t=${Date.now()}`;
