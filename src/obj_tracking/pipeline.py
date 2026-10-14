@@ -6,6 +6,7 @@ import argparse
 import math
 from collections.abc import Mapping, Sequence
 from pathlib import Path
+from threading import Lock
 from typing import Any
 
 
@@ -66,12 +67,54 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def process_frame(
+    frame: Any,
+    model: Any,
+    tracker: Any,
+    confidence: float,
+    inference_lock: Lock | None = None,
+) -> Any:
+    """Run detection and tracking on one frame, then draw confirmed tracks."""
+    import cv2
+
+    if inference_lock is None:
+        result = model.predict(frame, conf=confidence, verbose=False)[0]
+    else:
+        with inference_lock:
+            result = model.predict(frame, conf=confidence, verbose=False)[0]
+
+    detections = detections_from_result(result, model.names)
+    tracks = tracker.update_tracks(detections, frame=frame)
+    for track in tracks:
+        if not track.is_confirmed():
+            continue
+        left, top, right, bottom = (int(value) for value in track.to_ltrb())
+        cv2.rectangle(frame, (left, top), (right, bottom), (40, 220, 40), 2)
+        label = f"ID {track.track_id}"
+        class_name = track.get_det_class()
+        if class_name:
+            label = f"{class_name} {label}"
+        cv2.putText(
+            frame,
+            label,
+            (left, max(20, top - 8)),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.6,
+            (40, 220, 40),
+            2,
+        )
+    return frame
+
+
 def run_pipeline(
     source: str | int,
     model_path: str,
     output_path: str | None,
     confidence: float,
     display: bool,
+    model: Any | None = None,
+    tracker: Any | None = None,
+    inference_lock: Lock | None = None,
 ) -> int:
     try:
         import cv2
@@ -90,8 +133,10 @@ def run_pipeline(
     output = None
     window_name = "YOLO + DeepSORT"
     try:
-        model = YOLO(model_path)
-        tracker = DeepSort()
+        if model is None:
+            model = YOLO(model_path)
+        if tracker is None:
+            tracker = DeepSort()
         width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
         fps = capture.get(cv2.CAP_PROP_FPS)
@@ -119,27 +164,7 @@ def run_pipeline(
             if not ok:
                 break
 
-            result = model.predict(frame, conf=confidence, verbose=False)[0]
-            detections = detections_from_result(result, model.names)
-            tracks = tracker.update_tracks(detections, frame=frame)
-            for track in tracks:
-                if not track.is_confirmed():
-                    continue
-                left, top, right, bottom = (int(value) for value in track.to_ltrb())
-                cv2.rectangle(frame, (left, top), (right, bottom), (40, 220, 40), 2)
-                label = f"ID {track.track_id}"
-                class_name = track.get_det_class()
-                if class_name:
-                    label = f"{class_name} {label}"
-                cv2.putText(
-                    frame,
-                    label,
-                    (left, max(20, top - 8)),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.6,
-                    (40, 220, 40),
-                    2,
-                )
+            frame = process_frame(frame, model, tracker, confidence, inference_lock)
 
             if output is not None:
                 output.write(frame)
